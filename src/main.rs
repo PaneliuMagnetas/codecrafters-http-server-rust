@@ -40,37 +40,55 @@ fn main() {
                     }
                 };
 
-                let mut response = "HTTP/1.1 200 OK\r\n\r\n";
-
-                if request.path.starts_with("/echo/") {
-                    let mut split = request.path.splitn(2, "/echo/");
-
-                    let message = match split.nth(1) {
-                        Some(message) => message,
-                        None => {
-                            continue;
-                        }
-                    };
-
-                    _stream.write(format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                        message.len(),
-                        message,
-                    ).as_bytes()).unwrap();
-
-                    continue;
-                }
-
-                if request.path != "/" {
-                    response = "HTTP/1.1 404 NOT FOUND\r\n\r\n";
-                }
-
-                _stream.write(response.as_bytes()).unwrap();
+                _stream
+                    .write(generate_response(request).as_bytes())
+                    .unwrap();
             }
             Err(e) => {
                 println!("error: {}", e);
             }
         }
+    }
+}
+
+fn generate_response(request: Request) -> String {
+    match request.path.as_str() {
+        "/" => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
+        "/user-agent" => {
+            let mut response =
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n"
+                    .to_string();
+
+            for header in request.headers {
+                if header.name == "User-Agent" {
+                    response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                        header.value.len(),
+                        header.value,
+                    );
+                    break;
+                }
+            }
+
+            return response;
+        }
+        s if s.starts_with("/echo/") => {
+            let mut split = s.splitn(2, "/echo/");
+
+            let message = match split.nth(1) {
+                Some(message) => message,
+                None => {
+                    return "HTTP/1.1 404 NOT FOUND\r\n\r\n".to_string();
+                }
+            };
+
+            return format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                message.len(),
+                message,
+            );
+        }
+        _ => "HTTP/1.1 404 NOT FOUND\r\n\r\n".to_string(),
     }
 }
 
