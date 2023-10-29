@@ -119,7 +119,18 @@ async fn write_response(socket: &mut TcpStream, directory: Option<String>) {
 
             let path = format!("{}/{}", directory, file);
 
-            let content_length = match tokio::fs::metadata(&path).await {
+            handle_files(socket, request, path.as_str()).await;
+        }
+        _ => {
+            write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+        }
+    };
+}
+
+async fn handle_files(socket: &mut TcpStream, request: Request, file_path: &str) {
+    match request.method.as_str() {
+        "GET" => {
+            let content_length = match tokio::fs::metadata(file_path).await {
                 Ok(metadata) => metadata.len(),
                 Err(_) => {
                     write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
@@ -127,7 +138,7 @@ async fn write_response(socket: &mut TcpStream, directory: Option<String>) {
                 }
             };
 
-            let mut file = match tokio::fs::File::open(path).await {
+            let mut file = match tokio::fs::File::open(file_path).await {
                 Ok(file) => file,
                 Err(_) => {
                     write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
@@ -151,10 +162,35 @@ async fn write_response(socket: &mut TcpStream, directory: Option<String>) {
                 }
             }
         }
+        "POST" => {
+            let mut file = match tokio::fs::File::create(file_path).await {
+                Ok(file) => file,
+                Err(_) => {
+                    write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                    return;
+                }
+            };
+
+            let mut buffer = [0; 1024];
+            loop {
+                match socket.read(&mut buffer).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let _ = file.write(&buffer[0..n]).await;
+                    }
+                    Err(_) => {
+                        write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                        return;
+                    }
+                }
+            }
+
+            write(socket, "HTTP/1.1 201 CREATED\r\n\r\n").await;
+        }
         _ => {
             write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
         }
-    };
+    }
 }
 
 async fn read_request(stream: &mut TcpStream) -> Result<Request, Box<dyn Error>> {
