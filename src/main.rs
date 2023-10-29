@@ -23,31 +23,41 @@ struct Header {
 async fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:4221").await?;
 
-    loop {
-        let (socket, _) = listener.accept().await?;
+    let mut args = std::env::args();
+    let mut directory = None;
 
+    if let Some(arg) = args.nth(1) {
+        if arg == "--directory" {
+            directory = Some(args.nth(0).unwrap());
+        }
+    }
+
+    loop {
+        let (mut socket, _) = listener.accept().await?;
+
+        let directory = directory.clone();
         tokio::spawn(async move {
-            process_socket(socket).await;
+            write_response(&mut socket, directory).await;
         });
     }
 }
 
-async fn process_socket(mut stream: TcpStream) {
-    let request = match read_request(&mut stream).await {
+async fn write(socket: &mut TcpStream, text: &str) {
+    let _ = socket.write(text.as_bytes()).await;
+}
+
+async fn write_response(socket: &mut TcpStream, directory: Option<String>) {
+    let request = match read_request(socket).await {
         Ok(request) => request,
         Err(_) => {
             return;
         }
     };
 
-    let _ = stream
-        .write(generate_response(request).await.as_bytes())
-        .await;
-}
-
-async fn generate_response(request: Request) -> String {
     match request.path.as_str() {
-        "/" => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
+        "/" => {
+            write(socket, "HTTP/1.1 200 OK\r\n\r\n").await;
+        }
         "/user-agent" => {
             let mut response =
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n"
@@ -64,7 +74,7 @@ async fn generate_response(request: Request) -> String {
                 }
             }
 
-            return response;
+            write(socket, &response).await;
         }
         s if s.starts_with("/echo/") => {
             let mut split = s.splitn(2, "/echo/");
@@ -72,23 +82,84 @@ async fn generate_response(request: Request) -> String {
             let message = match split.nth(1) {
                 Some(message) => message,
                 None => {
-                    return "HTTP/1.1 404 NOT FOUND\r\n\r\n".to_string();
+                    write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                    return;
                 }
             };
 
-            return format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                message.len(),
-                message,
-            );
+            write(
+                socket,
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                    message.len(),
+                    message,
+                )
+                .as_str(),
+            )
+            .await;
         }
-        _ => "HTTP/1.1 404 NOT FOUND\r\n\r\n".to_string(),
-    }
+        s if s.starts_with("/files/") => {
+            let mut split = s.splitn(2, "/files/");
+
+            let directory = match directory {
+                Some(directory) => directory,
+                None => {
+                    write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                    return;
+                }
+            };
+
+            let file = match split.nth(1) {
+                Some(file) => file,
+                None => {
+                    write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                    return;
+                }
+            };
+
+            let path = format!("{}/{}", directory, file);
+
+            let content_length = match tokio::fs::metadata(&path).await {
+                Ok(metadata) => metadata.len(),
+                Err(_) => {
+                    write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                    return;
+                }
+            };
+
+            let mut file = match tokio::fs::File::open(path).await {
+                Ok(file) => file,
+                Err(_) => {
+                    write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                    return;
+                }
+            };
+
+            write(socket, format!("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n", content_length).as_str()).await;
+
+            let mut buffer = [0; 1024];
+            loop {
+                match file.read(&mut buffer).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let _ = socket.write(&buffer[0..n]).await;
+                    }
+                    Err(_) => {
+                        write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+                        return;
+                    }
+                }
+            }
+        }
+        _ => {
+            write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
+        }
+    };
 }
 
 async fn read_request(stream: &mut TcpStream) -> Result<Request, Box<dyn Error>> {
     let mut buffer = [0; 1024];
-    stream.read(&mut buffer).await?;
+    let _ = stream.read(&mut buffer).await;
 
     let request = match parse_request(&buffer) {
         Ok((_, request)) => request,
