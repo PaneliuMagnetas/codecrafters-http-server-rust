@@ -110,9 +110,7 @@ fn parse_request(input: &[u8]) -> IResult<&[u8], Request> {
 
     let (input, headers) = match headers(input) {
         Ok((input, headers)) => (input, headers),
-        Err(e) => {
-            return Err(e);
-        }
+        Err(_) => (input, vec![]),
     };
 
     let (input, _) = crlf(input)?;
