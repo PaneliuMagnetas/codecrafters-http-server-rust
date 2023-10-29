@@ -1,6 +1,7 @@
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::path;
+use std::error::Error;
+use std::io;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 use nom::{branch::alt, bytes::complete::*, multi::*, IResult};
 
@@ -18,37 +19,25 @@ struct Header {
     value: String,
 }
 
-#[derive(Debug)]
-enum Error {
-    ParseError,
-    IOError,
-    InvalidUTF8,
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:4221").await?;
+
+    loop {
+        let (socket, _) = listener.accept().await?;
+        process_socket(socket).await;
+    }
 }
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
-
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut _stream) => {
-                println!("accepted new connection");
-
-                let request = match read_request(&mut _stream) {
-                    Ok(request) => request,
-                    Err(e) => {
-                        continue;
-                    }
-                };
-
-                _stream
-                    .write(generate_response(request).as_bytes())
-                    .unwrap();
-            }
-            Err(e) => {
-                println!("error: {}", e);
-            }
+async fn process_socket(mut stream: TcpStream) {
+    let request = match read_request(&mut stream).await {
+        Ok(request) => request,
+        Err(e) => {
+            return;
         }
-    }
+    };
+
+    let _ = stream.write(generate_response(request).as_bytes()).await;
 }
 
 fn generate_response(request: Request) -> String {
@@ -92,18 +81,14 @@ fn generate_response(request: Request) -> String {
     }
 }
 
-fn read_request(stream: &mut TcpStream) -> Result<Request, Error> {
+async fn read_request(stream: &mut TcpStream) -> Result<Request, Box<dyn Error>> {
     let mut buffer = [0; 1024];
-    if let Err(e) = stream.read(&mut buffer) {
-        println!("error: {}", e);
-        return Err(Error::IOError);
-    }
+    stream.read(&mut buffer).await?;
 
     let request = match parse_request(&buffer) {
         Ok((_, request)) => request,
         Err(e) => {
-            println!("error: {}", e);
-            return Err(Error::ParseError);
+            return Err(Box::new(e.to_owned()));
         }
     };
 
@@ -170,8 +155,8 @@ fn header(input: &[u8]) -> IResult<&[u8], Header> {
     ))
 }
 
-fn from_utf8(input: &[u8]) -> Result<String, Error> {
-    let s = std::str::from_utf8(input).map_err(|_| Error::InvalidUTF8)?;
+fn from_utf8(input: &[u8]) -> Result<String, Box<dyn Error>> {
+    let s = std::str::from_utf8(input)?;
 
     Ok(s.to_string())
 }
