@@ -107,7 +107,14 @@ fn parse_request(input: &[u8]) -> IResult<&[u8], Request> {
     let (input, _) = space(input)?;
     let (input, version) = version(input)?;
     let (input, _) = crlf(input)?;
-    let (input, headers) = headers(input)?;
+
+    let (input, headers) = match headers(input) {
+        Ok((input, headers)) => (input, headers),
+        Err(e) => {
+            return Err(e);
+        }
+    };
+
     let (input, _) = crlf(input)?;
 
     Ok((
