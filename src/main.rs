@@ -5,7 +5,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use nom::{branch::alt, bytes::complete::*, multi::*, IResult};
 
-#[derive(Debug)]
+#[allow(dead_code)]
 struct Request {
     method: String,
     path: String,
@@ -32,7 +32,7 @@ async fn main() -> io::Result<()> {
 async fn process_socket(mut stream: TcpStream) {
     let request = match read_request(&mut stream).await {
         Ok(request) => request,
-        Err(e) => {
+        Err(_) => {
             return;
         }
     };
