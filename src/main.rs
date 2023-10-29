@@ -40,10 +40,12 @@ async fn process_socket(mut stream: TcpStream) {
         }
     };
 
-    let _ = stream.write(generate_response(request).as_bytes()).await;
+    let _ = stream
+        .write(generate_response(request).await.as_bytes())
+        .await;
 }
 
-fn generate_response(request: Request) -> String {
+async fn generate_response(request: Request) -> String {
     match request.path.as_str() {
         "/" => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
         "/user-agent" => {
