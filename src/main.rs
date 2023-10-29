@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path;
 
 use nom::{branch::alt, bytes::complete::*, multi::*, IResult};
 
@@ -39,14 +40,32 @@ fn main() {
                     }
                 };
 
-                if request.path != "/" {
-                    _stream
-                        .write("HTTP/1.1 404 NOT FOUND\r\n\r\n".as_bytes())
-                        .unwrap();
+                let mut response = "HTTP/1.1 200 OK\r\n\r\n";
+
+                if request.path.starts_with("/echo/") {
+                    let mut split = request.path.splitn(2, "/echo/");
+
+                    let message = match split.nth(1) {
+                        Some(message) => message,
+                        None => {
+                            continue;
+                        }
+                    };
+
+                    _stream.write(format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                        message.len(),
+                        message,
+                    ).as_bytes()).unwrap();
+
                     continue;
                 }
 
-                _stream.write("HTTP/1.1 200 OK\r\n\r\n".as_bytes()).unwrap();
+                if request.path != "/" {
+                    response = "HTTP/1.1 404 NOT FOUND\r\n\r\n";
+                }
+
+                _stream.write(response.as_bytes()).unwrap();
             }
             Err(e) => {
                 println!("error: {}", e);
