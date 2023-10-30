@@ -11,6 +11,7 @@ struct Request {
     path: String,
     version: String,
     headers: Vec<Header>,
+    content: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -171,9 +172,11 @@ async fn handle_files(socket: &mut TcpStream, request: Request, file_path: &str)
                 }
             };
 
+            let _ = file.write(&request.content).await;
+
             let mut buffer = [0; 1024];
             loop {
-                match socket.read(&mut buffer).await {
+                match socket.try_read(&mut buffer) {
                     Ok(0) => break,
                     Ok(n) => {
                         let _ = file.write(&buffer[0..n]).await;
@@ -214,7 +217,6 @@ fn parse_request(input: &[u8]) -> IResult<&[u8], Request> {
     let (input, _) = space(input)?;
     let (input, version) = version(input)?;
     let (input, _) = crlf(input)?;
-
     let (input, headers) = match headers(input) {
         Ok((input, headers)) => (input, headers),
         Err(_) => (input, vec![]),
@@ -229,6 +231,7 @@ fn parse_request(input: &[u8]) -> IResult<&[u8], Request> {
             path: from_utf8(path).unwrap(),
             version: from_utf8(version).unwrap(),
             headers,
+            content: input.to_vec(),
         },
     ))
 }
