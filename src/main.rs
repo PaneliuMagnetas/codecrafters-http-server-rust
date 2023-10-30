@@ -181,7 +181,7 @@ async fn handle_files(socket: &mut TcpStream, request: Request, file_path: &str)
                     Ok(n) => {
                         let _ = file.write(&buffer[0..n]).await;
                     }
-                    Err(_) => (),
+                    Err(_) => break,
                 }
             }
 
