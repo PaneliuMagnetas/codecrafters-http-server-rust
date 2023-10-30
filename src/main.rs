@@ -195,9 +195,9 @@ async fn handle_files(socket: &mut TcpStream, request: Request, file_path: &str)
 
 async fn read_request(stream: &mut TcpStream) -> Result<Request, Box<dyn Error>> {
     let mut buffer = [0; 1024];
-    let _ = stream.read(&mut buffer).await;
+    let length = stream.read(&mut buffer).await?;
 
-    let request = match parse_request(&buffer) {
+    let request = match parse_request(&buffer[0..length]) {
         Ok((_, request)) => request,
         Err(e) => {
             return Err(Box::new(e.to_owned()));
