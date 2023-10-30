@@ -181,10 +181,7 @@ async fn handle_files(socket: &mut TcpStream, request: Request, file_path: &str)
                     Ok(n) => {
                         let _ = file.write(&buffer[0..n]).await;
                     }
-                    Err(_) => {
-                        write(socket, "HTTP/1.1 404 NOT FOUND\r\n\r\n").await;
-                        return;
-                    }
+                    Err(_) => (),
                 }
             }
 
